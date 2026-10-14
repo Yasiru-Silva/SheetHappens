@@ -27,7 +27,7 @@ namespace SheetHappens.Ghosts.EditorTools
         const string AnimDir = "Assets/_Project/Animations/";
         const string PrefabDir = "Assets/_Project/Prefabs/Agents/";
 
-        // ---------------------------------------------------------------- menu
+        // ---------------------------------------------------------------- menu.
 
         [MenuItem("Tools/Sheet Happens/Build Animations/1 Wisp")] public static void BuildWisp() => Build(Wisp);
         [MenuItem("Tools/Sheet Happens/Build Animations/2 Blue Boo")] public static void BuildBlueBoo() => Build(BlueBoo);
@@ -664,7 +664,7 @@ namespace SheetHappens.Ghosts.EditorTools
                 .K("", "rz", 0f, 0f, 0.2f, 1.5f, 0.4f, 0f, 0.6f, -1.5f, 0.8f, 0f)
                 .Done();
 
-            // Run: the vacuum drops lower and sways more.
+            // Run: the vacuum drops lower and sways more
             c.Clip("Run", 0.55f, true)
                 .K("", "px", 0f, 0f, 0.1375f, 0.02f, 0.275f, 0f, 0.4125f, -0.02f, 0.55f, 0f)
                 .K("", "py", 0f, -0.03f, 0.1375f, -0.055f, 0.275f, -0.03f, 0.4125f, -0.055f, 0.55f, -0.03f)
@@ -672,7 +672,7 @@ namespace SheetHappens.Ghosts.EditorTools
                 .K("", "rz", 0f, 0f, 0.1375f, 3f, 0.4125f, -3f, 0.55f, 0f)
                 .Done();
 
-            // Recoil kicks the vacuum back (-z) and tips the nozzle up.
+            // Recoil kicks the vacuum back (-z) and tips the nozzle up
             c.Clip("Shoot", 0.25f, false)
                 .K("", "pz", 0f, 0f, 0.04f, -0.06f, 0.25f, 0f)
                 .K("", "rx", 0f, 0f, 0.04f, -4f, 0.25f, 0f)
