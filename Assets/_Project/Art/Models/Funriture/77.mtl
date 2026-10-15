@@ -1,0 +1,19 @@
+# File produced by AccuTrans 3D
+
+newmtl Cinema_Sof
+  Ns 112.76
+  d 1.0
+  illum 2
+  Kd 0.34 0.13 0.04
+  Ka 0.6118 0.3922 0.2431
+  Ks 0.898 0.898 0.898
+  map_Kd E:\BOIS-~43.jpg
+
+newmtl Cinema_Sof_1
+  Ns 39.1
+  d 1.0
+  illum 2
+  Kd 0.10 0.07 0.02
+  Ka 0.3529 0.2902 0.1686
+  Ks 0.898 0.898 0.898
+  map_Kd E:\LEATHE~6.jpg
