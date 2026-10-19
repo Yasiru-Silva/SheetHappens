@@ -12,21 +12,22 @@ namespace SheetHappens
     {
         [Header("Night sky")]
         public Color skyColor = new Color(0.015f, 0.02f, 0.045f);
-        public Color ambientColor = new Color(0.05f, 0.06f, 0.1f);
+        [Tooltip("General light everywhere in the house (raise to make the night brighter).")]
+        public Color houseAmbient = new Color(0.17f, 0.17f, 0.22f);
         public Color moonColor = new Color(0.55f, 0.65f, 0.95f);
-        public float moonIntensity = 0.12f;
+        public float moonBrightness = 0.35f;
         public bool fog = true;
-        public float fogDensity = 0.025f;
+        public float fogThickness = 0.012f;
 
         [Header("House lamps")]
         [Tooltip("Hanging lamp model (optional). Without one a small glowing bulb is used.")]
         public GameObject lampPrefab;
         public Color lampColor = new Color(1f, 0.68f, 0.38f);
-        public float lampIntensity = 3.5f;
-        public float lampRange = 8f;
+        public float lampBrightness = 6f;
+        public float lampReach = 12f;
         [Tooltip("Lamps are spread out so no two are closer than this.")]
-        public float lampSpacing = 6f;
-        public int maxLamps = 14;
+        public float lampGap = 5f;
+        public int lampCount = 20;
         [Tooltip("How many lamps cast shadows. Each point-light shadow uses 6 shadow maps; more than 2 overflows URP's shadow atlas.")]
         public int shadowCastingLamps = 2;
 
@@ -37,18 +38,18 @@ namespace SheetHappens
             {
                 if (l.type != LightType.Directional) continue;
                 l.color = moonColor;
-                l.intensity = moonIntensity;
+                l.intensity = moonBrightness;
                 l.transform.rotation = Quaternion.Euler(35f, -40f, 0f);
                 l.shadows = LightShadows.Soft;
             }
             RenderSettings.skybox = null;
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = ambientColor;
+            RenderSettings.ambientLight = houseAmbient;
             RenderSettings.reflectionIntensity = 0.15f;
             RenderSettings.fog = fog;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogColor = skyColor;
-            RenderSettings.fogDensity = fogDensity;
+            RenderSettings.fogDensity = fogThickness;
             // Window panes glow like daylight (an emissive "light" material): make them dark night glass.
             Material night = null;
             foreach (var r in FindObjectsByType<Renderer>(FindObjectsSortMode.None))
@@ -83,7 +84,7 @@ namespace SheetHappens
             order.Sort((a, b) => Hash(a).CompareTo(Hash(b)));
             foreach (int c in order)
             {
-                if (placed.Count >= maxLamps) break;
+                if (placed.Count >= lampCount) break;
                 Vector3 floor = grid.PathPoint(c);
                 if (!Physics.Raycast(floor + Vector3.up * 0.3f, Vector3.down, out var down, 1.5f, ~0, QueryTriggerInteraction.Ignore)) continue;
                 if (!Physics.Raycast(down.point + Vector3.up * 0.5f, Vector3.up, out var up, 8f, ~0, QueryTriggerInteraction.Ignore)) continue;
@@ -92,7 +93,7 @@ namespace SheetHappens
                 Vector3 at = new Vector3(down.point.x, up.point.y - Mathf.Min(0.9f, height * 0.25f), down.point.z);
                 bool tooClose = false;
                 foreach (var p in placed)
-                    if (Mathf.Abs(p.y - at.y) < 2f && new Vector2(p.x - at.x, p.z - at.z).sqrMagnitude < lampSpacing * lampSpacing) { tooClose = true; break; }
+                    if (Mathf.Abs(p.y - at.y) < 2f && new Vector2(p.x - at.x, p.z - at.z).sqrMagnitude < lampGap * lampGap) { tooClose = true; break; }
                 if (tooClose) continue;
                 CreateLamp(at, up.point.y, placed.Count < shadowCastingLamps);
                 placed.Add(at);
@@ -152,8 +153,8 @@ namespace SheetHappens
             }
             light.type = LightType.Point;
             light.color = lampColor;
-            light.intensity = lampIntensity;
-            light.range = lampRange;
+            light.intensity = lampBrightness;
+            light.range = lampReach;
             light.shadows = shadows ? LightShadows.Soft : LightShadows.None;
             root.AddComponent<LampFlicker>().target = light;
             root.AddComponent<GhostPassable>();

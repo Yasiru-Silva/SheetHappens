@@ -9,9 +9,12 @@ namespace SheetHappens
         S s;
         float timer;
 
+        protected override float StrugglePitch => 1.35f;
+        protected override Color CaptureTint => new Color(1f, 0.85f, 0.3f);
+
         protected override void OnSpawn()
         {
-            Type = GhostType.Wisp; MaxHits = 1; Speed = gm.wispSpeed;
+            Type = GhostType.Wisp; CaptureTime = 0.9f; recoverRate = 0.6f; Speed = gm.wispSpeed;
             s = S.Spawn; timer = 3f; // rises out of the furniture
         }
 
@@ -56,12 +59,17 @@ namespace SheetHappens
         float timer, repath;
         Cupboard cupboard;
         public override string DisplayName => "Blue Boo";
+        protected override string ScareClip => "Boo_Scream";
         [Tooltip("Bursts out of its cupboard when the player comes this close.")]
         public float ambushDistance = 4f;
 
+        protected override float StrugglePitch => 1.1f;
+        protected override bool FightsBack => true;
+        protected override Color CaptureTint => new Color(0.4f, 0.7f, 1f);
+
         protected override void OnSpawn()
         {
-            Type = GhostType.BlueBoo; MaxHits = 2; Speed = gm.blueBooSpeed; healAfter = 8f;
+            Type = GhostType.BlueBoo; CaptureTime = 1.7f; recoverRate = 0.35f; Speed = gm.blueBooSpeed;
             s = S.Hide;
             // Start hidden in the cupboard it was spawned next to.
             var c = Cupboard.FindFree(logical, PlayerPos, 4f, 0f);
@@ -86,7 +94,7 @@ namespace SheetHappens
             {
                 case S.Hide:
                     transform.Rotate(0f, 25f * Time.deltaTime, 0f); // slowly peeks around
-                    if (CanSeePlayer(11f, 120f)) { s = S.DetectPlayer; timer = 0.7f; gm.ShowBanner("A Blue Boo spotted you!", 1.5f); }
+                    if (CanSeePlayer(11f, 120f)) { s = S.DetectPlayer; timer = 0.7f; gm.ShowBanner("A Blue Boo spotted you!", 1.5f); Scare(); }
                     break;
                 case S.InCupboard:
                     {
@@ -99,6 +107,7 @@ namespace SheetHappens
                             cupboard.Open(true);
                             cupboard.Leave(this);
                             SetHiddenInside(false);
+                            Scare();
                             s = S.Burst;
                             gm.ShowBanner(opened ? "A Blue Boo was hiding in there!" : "A Blue Boo burst out of the cupboard!", 1.6f);
                         }
@@ -181,9 +190,13 @@ namespace SheetHappens
         Vector3 avoidPos;
         public override string DisplayName => "Green Sneak";
 
+        protected override float StrugglePitch => 0.95f;
+        protected override bool FightsBack => true;
+        protected override Color CaptureTint => new Color(0.45f, 1f, 0.45f);
+
         protected override void OnSpawn()
         {
-            Type = GhostType.GreenSneak; MaxHits = 2; Speed = gm.greenSneakSpeed;
+            Type = GhostType.GreenSneak; CaptureTime = 1.9f; recoverRate = 0.3f; Speed = gm.greenSneakSpeed;
             s = S.HideObserve; timer = 3f;
         }
 
@@ -243,10 +256,17 @@ namespace SheetHappens
         float timer, repath, lostSight;
         Vector3 lastSeen;
         public override string DisplayName => "Grandpa Ghost";
+        protected override string ScareClip => "Grandpa_Growl";
+        // After landing a hit he laughs at you.
+        protected override void OnAttackSound() => Sfx.Play("Grandpa_Laugh", Eye, 1f, 0.75f);
+
+        protected override float StrugglePitch => 0.6f;
+        protected override bool FightsBack => true;
+        protected override Color CaptureTint => new Color(0.9f, 0.9f, 1f);
 
         protected override void OnSpawn()
         {
-            Type = GhostType.Grandpa; MaxHits = Mathf.Max(1, gm.grandpaHits); Speed = gm.grandpaSpeed;
+            Type = GhostType.Grandpa; CaptureTime = Mathf.Max(1f, gm.grandpaCaptureSeconds); recoverRate = 0.12f; Speed = gm.grandpaSpeed;
             s = S.Hidden; timer = 3f;
         }
 
@@ -290,6 +310,7 @@ namespace SheetHappens
         {
             s = S.DetectPlayer; timer = 0.5f; lastSeen = PlayerPos;
             gm.ShowBanner("Grandpa Ghost has seen you!", 2f);
+            Scare();
         }
 
         void NewSearchTarget()

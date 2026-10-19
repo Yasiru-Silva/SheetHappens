@@ -41,6 +41,16 @@ namespace SheetHappens
             vy = 0f;
         }
 
+        /// <summary>Turns the view to look at a point (used by the debug keys).</summary>
+        public void LookAt(Vector3 point)
+        {
+            Vector3 d = point - EyePosition;
+            Vector3 flat = new Vector3(d.x, 0f, d.z);
+            if (flat.sqrMagnitude > 1e-4f) transform.rotation = Quaternion.LookRotation(flat);
+            pitch = Mathf.Clamp(-Mathf.Atan2(d.y, flat.magnitude) * Mathf.Rad2Deg, -85f, 85f);
+            if (cameraRoot) cameraRoot.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+        }
+
         public void Shake(float seconds, float amount)
         {
             shakeUntil = Time.time + seconds;

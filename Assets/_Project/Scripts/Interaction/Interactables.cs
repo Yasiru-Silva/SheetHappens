@@ -122,6 +122,7 @@ namespace SheetHappens
             if ((body - transform.position).sqrMagnitude < 1.2f)
             {
                 if (gm.Vacuum) gm.Vacuum.AddEnergy(1);
+                Sfx.Play("Energy_Pickup", transform.position, 0.8f, 0.2f, Random.Range(0.95f, 1.08f));
                 Destroy(gameObject);
             }
         }

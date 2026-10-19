@@ -24,6 +24,16 @@ namespace SheetHappens
         [Header("Furniture from the asset pack")]
         [Tooltip("Furniture size. 0 = match the house automatically (the house is built at 2x the asset pack's size).")]
         public float furnitureScale = 0f;
+        [Tooltip("Furnish the house randomly when there is no saved [FURNITURE] layout. Off: the house is used exactly as built.")]
+        public bool randomFurniture = false;
+        [Tooltip("Furniture that was built inside the house and is already the right size (not scaled up).")]
+        public GameObject[] houseSizedPrefabs;
+        [Tooltip("Cabinets that hang on the wall (e.g. the pantry) instead of standing on the floor.")]
+        public GameObject[] wallHungPrefabs;
+        [Tooltip("Height of the bottom of wall-hung cabinets above the floor (metres).")]
+        public float wallHungHeight = 2f;
+        /// <summary>Our own furniture placed this game (for the F6 debug jump).</summary>
+        public readonly List<GameObject> OwnPieces = new List<GameObject>();
         [Tooltip("Cupboards with doors that open (Blue Boos hide in these).")]
         public GameObject[] hideCupboards;
         public int hideCupboardCount = 6;
@@ -114,6 +124,7 @@ namespace SheetHappens
             PlacePlayer();
             grandpaCell = Marker("GrandpaArmchair", out var gp) ? grid.NearestWalkable(gp) : ClosestTo(groundFloor, Centroid(groundFloor), null);
             if (HasSavedLayout()) { ApplySavedLayout(); return; }
+            if (!randomFurniture) { Debug.Log("[SheetHappens] No [FURNITURE] layout and random furniture is off: using the house exactly as built."); return; }
             Furnish();
 
             var tables = new List<GameObject>();
@@ -216,17 +227,23 @@ namespace SheetHappens
 
         GameObject PlaceProp(GameObject prefab, float spacing)
         {
-            for (int attempt = 0; attempt < 60 && flatCells.Count > 0; attempt++)
+            int tries = IsHouseSized(prefab) ? 600 : 60; // big custom pieces need more tries to find a room they fit in
+            int blocked = 0;
+            for (int attempt = 0; attempt < tries && flatCells.Count > 0; attempt++)
             {
                 int c = flatCells[rng.Next(flatCells.Count)];
                 Vector3 floor = FloorPoint(c);
                 if (TooClose(floor, spacing)) continue;
                 var go = Spawn(prefab, floor, Quaternion.Euler(0f, 90f * rng.Next(4), 0f) * prefab.transform.rotation); // keep the model upright
+                // Centre the model itself on the spot (a prefab's pivot can be far from its geometry).
+                Bounds gb0 = RendererBounds(go);
+                go.transform.position += new Vector3(floor.x - gb0.center.x, 0f, floor.z - gb0.center.z);
                 SitOn(go, floor.y);
-                if (!Fits(go)) { DestroyImmediate(go); continue; }
+                if (!Fits(go, out string hitName)) { blocked++; DestroyImmediate(go); continue; }
                 used.Add(floor);
                 return go;
             }
+            if (IsHouseSized(prefab)) Debug.LogWarning($"[SheetHappens] Could not place {prefab.name}: no free spot big enough ({blocked} spots blocked).");
             return null;
         }
 
@@ -235,10 +252,18 @@ namespace SheetHappens
         {
             var go = Instantiate(prefab, pos, rot);
             go.name = prefab.name;
-            go.transform.localScale = prefab.transform.localScale * Scale;
+            go.transform.localScale = prefab.transform.localScale * (IsHouseSized(prefab) ? 1f : Scale);
+            if (IsHouseSized(prefab)) OwnPieces.Add(go);
             Mats.FixForUrp(go);
             return go;
         }
+
+        bool IsWallHung(GameObject prefab) => wallHungPrefabs != null && System.Array.IndexOf(wallHungPrefabs, prefab) >= 0;
+
+        bool IsHouseSized(GameObject prefab) => houseSizedPrefabs != null && System.Array.IndexOf(houseSizedPrefabs, prefab) >= 0;
+
+        /// <summary>The first picks go through the list in order (so every kind appears), then they are random.</summary>
+        GameObject Pick(GameObject[] list, int i) => list[i < list.Length ? i : rng.Next(list.Length)];
 
         /// <summary>How much bigger the house is than the asset pack's own walls (2.5 m high).</summary>
         static float HouseScale()
@@ -335,7 +360,7 @@ namespace SheetHappens
         static System.Collections.Generic.IEnumerable<GameObject> SavedPieces()
         {
             foreach (var t in FindObjectsByType<Transform>(FindObjectsSortMode.None))
-                if (t.parent == null && t.name == "[FURNITURE]" && t.GetComponent<FurnitureLayoutInfo>() && t.GetComponent<FurnitureLayoutInfo>().version >= 2)
+                if (t.parent == null && t.name == "[FURNITURE]")
                     foreach (Transform child in t) yield return child.gameObject;
         }
 
@@ -343,7 +368,7 @@ namespace SheetHappens
         static void HideOldLayouts()
         {
             foreach (var t in FindObjectsByType<Transform>(FindObjectsSortMode.None))
-                if (t.parent == null && t.name.StartsWith("[FURNITURE") && (!t.GetComponent<FurnitureLayoutInfo>() || t.GetComponent<FurnitureLayoutInfo>().version < 2))
+                if (t.parent == null && t.name.StartsWith("[FURNITURE OLD"))
                     t.gameObject.SetActive(false);
         }
 
@@ -363,12 +388,39 @@ namespace SheetHappens
         public void PrepareSavedLayout()
         {
             HideOldLayouts();
+            PrepareHandPlacedObjects();
             foreach (var go in SavedPieces())
             {
                 if (!go.GetComponent<GhostPassable>()) go.AddComponent<GhostPassable>();
                 var k = KindOf(go);
                 if ((k == PropKind.Barricade || k == PropKind.Throwable) && !go.GetComponent<Rigidbody>()) go.AddComponent<Rigidbody>();
             }
+        }
+
+        static readonly string[] GameRoots = { "[GAME]", "[PLAYER]", "[ROOF]", "[LADDERS]", "AtticBell" };
+
+        /// <summary>
+        /// Furniture and models placed straight into the scene by hand (sofas, bathtub, toilet...): give them URP materials
+        /// so they never render pink, and a collider if they have none so the player cannot walk through them.
+        /// Called before the ghost grid is built, so ghosts float around them too.
+        /// </summary>
+        void PrepareHandPlacedObjects()
+        {
+            int fixedCols = 0;
+            foreach (var root in gameObject.scene.GetRootGameObjects())
+            {
+                if (System.Array.IndexOf(GameRoots, root.name) >= 0 || root.name.StartsWith("[FURNITURE OLD") || !root.activeInHierarchy) continue;
+                Mats.FixForUrp(root);
+                if (root.name == "[FURNITURE]") continue; // handled by the saved layout
+                foreach (var mf in root.GetComponentsInChildren<MeshFilter>())
+                {
+                    if (mf.sharedMesh == null || mf.GetComponentInParent<Collider>() || mf.GetComponentInChildren<Collider>()) continue;
+                    if (mf.GetComponentInParent<Rigidbody>() || mf.GetComponentInParent<Door>() || mf.GetComponent<Renderer>() == null) continue;
+                    mf.gameObject.AddComponent<MeshCollider>().sharedMesh = mf.sharedMesh;
+                    fixedCols++;
+                }
+            }
+            if (fixedCols > 0) Debug.Log($"[SheetHappens] Added colliders to {fixedCols} hand-placed models.");
         }
 
         /// <summary>Uses the furniture saved in the scene instead of furnishing the house randomly.</summary>
@@ -455,7 +507,7 @@ namespace SheetHappens
             int cupboards = 0;
             for (int i = 0; i < hideCupboardCount && hideCupboards != null && hideCupboards.Length > 0; i++)
             {
-                var prefab = hideCupboards[rng.Next(hideCupboards.Length)];
+                var prefab = Pick(hideCupboards, i);
                 var go = PlaceAgainstWall(prefab, PropKind.HideCupboard, 2.6f * Scale);
                 if (!go) break;
                 var cb = go.AddComponent<Cupboard>();
@@ -468,14 +520,26 @@ namespace SheetHappens
                 bool facesRoom = Physics.Raycast(eye, toBody.normalized, out var fh, toBody.magnitude + 1f, ~0, QueryTriggerInteraction.Ignore) && fh.collider.transform.IsChildOf(go.transform);
                 Debug.Log($"[SheetHappens] Cupboard {cupboards} at {go.transform.position:F1}, doors face {cb.Forward}, {(facesRoom ? "facing the room" : "NOT facing the room")}.");
             }
+            // Tables next: big ones need open floor before the rooms fill up.
+            for (int i = 0; i < extraTables && diningTables != null && diningTables.Length > 0; i++)
+            {
+                var tp = Pick(diningTables, i);
+                var t = PlaceProp(tp, 3.5f + Scale);
+                if (!t) continue;
+                Tag(t, PropKind.Table, tp);
+                EnsureCollider(t);
+                t.AddComponent<GhostPassable>();
+                AddChairs(t);
+                surfaces.Add(t);
+            }
             int placed = 0;
             for (int i = 0; i < wallPieces && wallFurniture != null && wallFurniture.Length > 0; i++)
             {
-                var prefab = wallFurniture[rng.Next(wallFurniture.Length)];
+                var prefab = Pick(wallFurniture, i);
                 var go = PlaceAgainstWall(prefab, PropKind.WallFurniture, 1.4f * Scale);
                 if (!go) continue;
                 placed++;
-                if (RendererBounds(go).size.y < 1.25f * Scale) surfaces.Add(go); // drawers, workbenches, sinks: things go on top
+                if (RendererBounds(go).size.y < 1.25f * Scale && RendererBounds(go).size.y > 0.5f) surfaces.Add(go); // drawers, workbenches, sinks: things go on top
             }
             int decor = 0;
             for (int i = 0; i < floorDecorCount && floorDecor != null && floorDecor.Length > 0; i++)
@@ -488,17 +552,6 @@ namespace SheetHappens
             {
                 var prefab = wallDecor[rng.Next(wallDecor.Length)];
                 if (HangOnWall(prefab)) hung++;
-            }
-            for (int i = 0; i < extraTables && diningTables != null && diningTables.Length > 0; i++)
-            {
-                var tp = diningTables[rng.Next(diningTables.Length)];
-                var t = PlaceProp(tp, 3.5f + Scale);
-                if (!t) break;
-                Tag(t, PropKind.Table, tp);
-                EnsureCollider(t);
-                t.AddComponent<GhostPassable>();
-                AddChairs(t);
-                surfaces.Add(t);
             }
             for (int i = 0; i < carpetCount && carpets != null && carpets.Length > 0; i++)
             {
@@ -544,23 +597,25 @@ namespace SheetHappens
         GameObject PlaceAgainstWall(GameObject prefab, PropKind kind, float spacing)
         {
             if (prefab == null) return null;
+            int noWall = 0, near = 0, notFlat = 0, blocked = 0;
             for (int attempt = 0; attempt < 400; attempt++)
             {
                 int c = ground[rng.Next(ground.Count)];
                 Vector3 floor = FloorPoint(c);
                 Vector3 d = Dirs[rng.Next(4)];
-                if (!WallAt(floor, d, out float dist)) continue;
-                if (TooClose(floor, spacing)) continue;
+                bool hung = IsWallHung(prefab);
+                if (!WallAt(floor, d, out float dist, hung ? new[] { wallHungHeight + 0.2f, wallHungHeight + 0.6f, wallHungHeight + 1f } : null)) { noWall++; continue; }
+                if (TooClose(floor, spacing)) { near++; continue; }
                 var go = Spawn(prefab, Vector3.zero, Facing(prefab, -d));
                 Bounds b = RendererBounds(go);
                 Vector3 off = go.transform.position - b.center;
                 float depth = Mathf.Abs(d.x) > 0.5f ? b.size.x : b.size.z;
                 Vector3 center = floor + d * (dist - depth * 0.5f - 0.04f);
                 if (Physics.Raycast(center + Vector3.up * 0.6f, Vector3.down, out var fh, 1.2f, ~0, QueryTriggerInteraction.Ignore)) center.y = fh.point.y;
-                if (Mathf.Abs(center.y - floor.y) > 0.1f) { DestroyImmediate(go); continue; } // something under it: not a clean floor spot
+                if (Mathf.Abs(center.y - floor.y) > 0.1f) { DestroyImmediate(go); notFlat++; continue; } // something under it: not a clean floor spot
                 go.transform.position = new Vector3(center.x + off.x, center.y, center.z + off.z);
-                SitOn(go, center.y);
-                if (!Fits(go) || TooClose(center, spacing)) { DestroyImmediate(go); continue; }
+                SitOn(go, center.y + (hung ? wallHungHeight : 0f));
+                if (!Fits(go, out string hitName) || TooClose(center, spacing)) { DestroyImmediate(go); blocked++; if (blocked < 4 && IsHouseSized(prefab)) Debug.Log($"[SheetHappens] {prefab.name} blocked by {hitName}"); continue; }
                 EnsureCollider(go);
                 go.AddComponent<GhostPassable>();
                 var rb = go.GetComponent<Rigidbody>();
@@ -569,6 +624,8 @@ namespace SheetHappens
                 used.Add(center);
                 return go;
             }
+            string why = $"[SheetHappens] Could not place {prefab.name}: no wall {noWall}, too close {near}, uneven floor {notFlat}, blocked {blocked}.";
+            if (IsHouseSized(prefab)) Debug.LogWarning(why); else Debug.Log(why + " (the house is full)");
             return null;
         }
 
@@ -692,13 +749,16 @@ namespace SheetHappens
         }
 
         /// <summary>The object does not cut into walls, other furniture, the ceiling or the roof.</summary>
-        bool Fits(GameObject go)
+        bool Fits(GameObject go) => Fits(go, out _);
+
+        bool Fits(GameObject go, out string hitName)
         {
+            hitName = "";
             Physics.SyncTransforms();
             Bounds b = RendererBounds(go);
             Vector3 half = Vector3.Max(b.extents - new Vector3(0.06f, 0.08f, 0.06f), Vector3.one * 0.02f);
             foreach (var h in Physics.OverlapBox(b.center + Vector3.up * 0.08f, half, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore))
-                if (!h.transform.IsChildOf(go.transform)) return false;
+                if (!h.transform.IsChildOf(go.transform)) { hitName = h.name; return false; }
             return true;
         }
 

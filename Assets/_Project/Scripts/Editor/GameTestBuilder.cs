@@ -37,12 +37,9 @@ namespace SheetHappens.EditorTools
             foreach (var r in scene.GetRootGameObjects())
                 if (r.name == "[GAME]" || r.name == "[PLAYER]" || r.name == "[ROOF]" || r.name == "[LADDERS]" || r.name == "AtticBell") Object.DestroyImmediate(r);
 
-            // A furniture layout saved before the furniture was resized to the house: keep it (switched off) for reference.
+            // Never touch the hand-made furniture layout: just mark it as a current layout.
             foreach (var r in scene.GetRootGameObjects())
-            {
-                var info = r.GetComponent<FurnitureLayoutInfo>();
-                if (r.name == "[FURNITURE]" && (info == null || info.version < 2)) { r.name = "[FURNITURE OLD small - safe to delete]"; r.SetActive(false); }
-            }
+                if (r.name == "[FURNITURE]" && r.GetComponent<FurnitureLayoutInfo>() == null) r.AddComponent<FurnitureLayoutInfo>();
 
             // Make sure the house can be walked on and blocks ghosts: add mesh colliders where a mesh has none.
             int colliders = 0;
@@ -112,8 +109,15 @@ namespace SheetHappens.EditorTools
             lvl.throwablePrefabs = new[] { Load(bk + "Items/Books/Book01.prefab"), Load(bk + "Items/Books/Book02.prefab"), Load(bk + "Items/Books/Book03.prefab"),
                                            Load(bk + "Items/Dishes/ClutterTanker01.prefab"), Load(bk + "Items/Dishes/ClutterBowl01.prefab") }.Where(x => x != null).ToArray();
 
-            lvl.hideCupboards = LoadAll(bk + "Furniture/", "WoodCupboard03");
-            lvl.wallFurniture = LoadAll(bk + "Furniture/", "WoodCupboard01", "WoodCupboard02", "Drawer01", "Drawer02", "Drawer03", "WoodDrawer01", "Stove", "Workbench", "TableSink", "Alembic02");
+            // Our own furniture (built in the house, already house-sized) comes first so it always appears.
+            const string own = "Assets/_Project/Prefabs/Furniture/";
+            var pantry = Load(own + "Pantry.prefab");
+            var bed = Load(own + "Beed.prefab");
+            var dining = Load(own + "Dinning table.prefab");
+            lvl.houseSizedPrefabs = new[] { pantry, bed, dining }.Where(x => x != null).ToArray();
+            lvl.wallHungPrefabs = new[] { pantry }.Where(x => x != null).ToArray();
+            lvl.hideCupboards = new[] { pantry }.Concat(LoadAll(bk + "Furniture/", "WoodCupboard03")).Where(x => x != null).ToArray();
+            lvl.wallFurniture = new[] { bed, bed }.Where(x => x != null).Concat(LoadAll(bk + "Furniture/", "WoodCupboard01", "WoodCupboard02", "Drawer01", "Drawer02", "Drawer03", "WoodDrawer01", "Stove", "Workbench", "TableSink", "Alembic02")).ToArray();
             lvl.floorDecor = LoadAll(bk + "Items/", "Misc/Globe", "Lab/CaldronTripod01", "Lab/CaldronTripod02", "Lab/CaldronTripod03", "Lab/Caldron01",
                                      "Misc/Basket03", "Misc/Trunk01", "Misc/Log01", "Organic/DragonSkull");
             lvl.wallDecor = LoadAll(bk, "Items/Misc/Painting01", "Items/Misc/painting02", "Items/Misc/painting03", "Items/Misc/painting04", "Furniture/Board", "Furniture/WoodShelf01", "Furniture/WoodShelf01");
@@ -122,7 +126,7 @@ namespace SheetHappens.EditorTools
                                   "Dishes/ClutterBowl01", "Dishes/ClutterBowl02", "Dishes/ClutterPichet01", "Dishes/ClutterPichet02", "Dishes/ClutterPlate01", "Dishes/ClutterTanker01", "Dishes/ClutterGlass01",
                                   "Lights/Candle01", "Lights/Candle01c", "Organic/Skull01b", "Organic/Skull02", "Organic/Jar01", "Organic/JarBrain", "Organic/JarBaby01", "Organic/Apple",
                                   "Lab/LabSetup01", "Lab/LabSetup02", "Lab/LabSetup03");
-            lvl.diningTables = LoadAll(bk + "Furniture/", "Table01", "table03", "Table04", "WoodTableSquare01b");
+            lvl.diningTables = new[] { dining }.Where(x => x != null).Concat(LoadAll(bk + "Furniture/", "Table01", "table03", "Table04", "WoodTableSquare01b")).ToArray();
             lvl.chairs = LoadAll(bk + "Furniture/", "Chair01", "WoodStool");
             lvl.carpets = LoadAll(bk + "Furniture/", "Carpet01", "Carpet02", "Carpet03");
             lvl.barricadePrefabs = LoadAll(bk, "Items/Misc/Trunk01", "Items/Misc/Basket01", "Items/Misc/Basket02");

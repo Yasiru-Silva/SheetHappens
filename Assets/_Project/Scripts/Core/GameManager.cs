@@ -36,22 +36,33 @@ namespace SheetHappens
         public float blueBooSpeed = 1.6f;
         public float greenSneakSpeed = 1.1f;
         public float grandpaSpeed = 2.2f;
-        public int grandpaHits = 5;
+        [Tooltip("Seconds of steady suction (at vacuum level 1) needed to capture Grandpa.")]
+        public float grandpaCaptureSeconds = 5f;
+
+        [Header("Respawning")]
+        [Tooltip("Captured Wisps come back after this many seconds (there is no limit to how many Wisps a night has).")]
+        public float wispRespawnDelay = 12f;
+        [Tooltip("Captured Blue Boos come back after this many seconds.")]
+        public float blueBooRespawnDelay = 12f;
+        [Tooltip("Never more than this many Wisps / Blue Boos in the house at once.")]
+        public int maxWisps = 6, maxBlueBoos = 5;
 
         [Header("Spawn schedule (Grandpa is added automatically at 5 AM)")]
-        public List<SpawnEvent> schedule = new List<SpawnEvent>
+        [Tooltip("A little fewer Wisps and a few more Blue Boos than the first version.")]
+        public List<SpawnEvent> ghostSchedule = new List<SpawnEvent>
         {
             new SpawnEvent { time = 15,  type = GhostType.Wisp,       count = 2 },
             new SpawnEvent { time = 50,  type = GhostType.Wisp,       count = 2 },
-            new SpawnEvent { time = 90,  type = GhostType.Wisp,       count = 3 },
+            new SpawnEvent { time = 90,  type = GhostType.Wisp,       count = 2 },
             new SpawnEvent { time = 124, type = GhostType.BlueBoo,    count = 2 },
-            new SpawnEvent { time = 140, type = GhostType.Wisp,       count = 2 },
-            new SpawnEvent { time = 185, type = GhostType.Wisp,       count = 3 },
-            new SpawnEvent { time = 215, type = GhostType.BlueBoo,    count = 1 },
+            new SpawnEvent { time = 150, type = GhostType.Wisp,       count = 2 },
+            new SpawnEvent { time = 175, type = GhostType.BlueBoo,    count = 1 },
+            new SpawnEvent { time = 200, type = GhostType.Wisp,       count = 2 },
+            new SpawnEvent { time = 225, type = GhostType.BlueBoo,    count = 1 },
             new SpawnEvent { time = 244, type = GhostType.GreenSneak, count = 1 },
             new SpawnEvent { time = 262, type = GhostType.Wisp,       count = 2 },
-            new SpawnEvent { time = 285, type = GhostType.GreenSneak, count = 1 },
-            new SpawnEvent { time = 325, type = GhostType.Wisp,       count = 2 },
+            new SpawnEvent { time = 295, type = GhostType.BlueBoo,    count = 1 },
+            new SpawnEvent { time = 325, type = GhostType.Wisp,       count = 1 },
         };
 
         public GameState State { get; private set; } = GameState.Playing;
@@ -74,7 +85,7 @@ namespace SheetHappens
         float lastHit = -99f;
         int nextEvent;
         int lastWave;
-        bool grandpaSpawned;
+        bool grandpaSpawned, greenSneakSpawned;
 
         void Awake()
         {
@@ -131,7 +142,7 @@ namespace SheetHappens
                     }
                 }
             }
-            schedule.Sort((a, b) => a.time.CompareTo(b.time));
+            ghostSchedule.Sort((a, b) => a.time.CompareTo(b.time));
             Ready = true;
             ShowBanner("Midnight. Keep the ghosts away from the attic bell!", 4f);
         }
@@ -152,20 +163,19 @@ namespace SheetHappens
             if (Wave != lastWave)
             {
                 lastWave = Wave;
-                if (Wave > 1) ShowBanner(Wave == 2 ? "Wave 2: Blue Boos are hiding in the house." : "Wave 3: Green Sneaks are sneaking to the bell.", 4f);
+                if (Wave > 1) ShowBanner(Wave == 2 ? "Wave 2: Blue Boos are hiding in the house." : "Wave 3: a Green Sneak is sneaking to the bell.", 4f);
                 Level.SpawnEnergyBalls();
             }
 
-            while (nextEvent < schedule.Count && schedule[nextEvent].time <= Elapsed)
+            while (nextEvent < ghostSchedule.Count && ghostSchedule[nextEvent].time <= Elapsed)
             {
-                StartCoroutine(SpawnGroup(schedule[nextEvent]));
+                StartCoroutine(SpawnGroup(ghostSchedule[nextEvent]));
                 nextEvent++;
             }
 
             if (!grandpaSpawned && Elapsed >= GrandpaTime)
             {
-                grandpaSpawned = true;
-                Level.SpawnGhost(GhostType.Grandpa);
+                TrySpawn(GhostType.Grandpa);
                 ShowBanner("5 AM: Grandpa Ghost has woken up. Capture him before 6 AM!", 5f);
             }
 
@@ -178,9 +188,36 @@ namespace SheetHappens
             for (int i = 0; i < ev.count; i++)
             {
                 if (State != GameState.Playing) yield break;
-                Level.SpawnGhost(ev.type);
+                TrySpawn(ev.type);
                 yield return new WaitForSeconds(3f);
             }
+        }
+
+        int Alive(GhostType t)
+        {
+            int n = 0;
+            foreach (var g in Ghosts) if (g != null && !g.IsCaptured && g.Type == t) n++;
+            return n;
+        }
+
+        /// <summary>Spawns a ghost if the rules allow it: only one Green Sneak and one Grandpa per night (they never
+        /// come back once captured); Wisps and Blue Boos keep coming, up to a cap at any one time.</summary>
+        public GhostAgent TrySpawn(GhostType t)
+        {
+            switch (t)
+            {
+                case GhostType.GreenSneak: if (greenSneakSpawned) return null; greenSneakSpawned = true; break;
+                case GhostType.Grandpa: if (grandpaSpawned) return null; grandpaSpawned = true; break;
+                case GhostType.Wisp: if (Alive(t) >= maxWisps) return null; break;
+                case GhostType.BlueBoo: if (Alive(t) >= maxBlueBoos) return null; break;
+            }
+            return Level.SpawnGhost(t);
+        }
+
+        IEnumerator Respawn(GhostType t, float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            if (State == GameState.Playing) TrySpawn(t);
         }
 
         public void Register(GhostAgent g) { if (!Ghosts.Contains(g)) Ghosts.Add(g); }
@@ -228,8 +265,11 @@ namespace SheetHappens
         {
             Ghosts.Remove(g);
             if (State != GameState.Playing) return;
-            if (g.Type == GhostType.Grandpa) Win();
-            else ShowBanner($"{g.DisplayName} captured!", 1.2f);
+            if (g.Type == GhostType.Grandpa) { Win(); return; }
+            ShowBanner($"{g.DisplayName} captured!", 1.2f);
+            // Wisps and Blue Boos keep coming back; the Green Sneak is gone for good.
+            if (g.Type == GhostType.Wisp) StartCoroutine(Respawn(GhostType.Wisp, wispRespawnDelay));
+            else if (g.Type == GhostType.BlueBoo) StartCoroutine(Respawn(GhostType.BlueBoo, blueBooRespawnDelay));
         }
 
         void Win()

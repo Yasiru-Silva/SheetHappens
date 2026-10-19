@@ -75,6 +75,26 @@ namespace SheetHappens
             Forward = Mathf.Abs(f.x) > Mathf.Abs(f.z) ? new Vector3(Mathf.Sign(f.x), 0f, 0f) : new Vector3(0f, 0f, Mathf.Sign(f.z));
             if (f.sqrMagnitude < 1e-6f) Forward = transform.forward;
 
+            // Doors built from plain cubes pivot in their middle: give each one a hinge on its outer edge.
+            Vector3 lateral = Vector3.Cross(Vector3.up, Forward);
+            for (int i = 0; i < doors.Count; i++)
+            {
+                var d = doors[i];
+                if (d.parent != null && d.parent.name.ToLower().Contains("hinge")) { doors[i] = d.parent; continue; }
+                Bounds db = PartBounds(d);
+                float width = Mathf.Abs(Vector3.Dot(db.size, lateral));
+                float pivotOff = Vector3.Dot(d.position - db.center, lateral);
+                if (Mathf.Abs(pivotOff) > width * 0.3f) continue; // already pivots near an edge
+                float side = Mathf.Sign(Vector3.Dot(db.center - body.center, lateral));
+                if (side == 0f) side = 1f;
+                var hinge = new GameObject(d.name + "_Hinge").transform;
+                hinge.SetParent(d.parent, false);
+                hinge.position = db.center + lateral * side * (width * 0.5f);
+                hinge.rotation = Quaternion.identity;
+                d.SetParent(hinge, true);
+                doors[i] = hinge;
+            }
+
             foreach (var d in doors)
             {
                 // Pick the swing direction that moves the door outwards (towards the front).
@@ -84,19 +104,22 @@ namespace SheetHappens
                 float sign = Vector3.Dot(testPlus - c, Forward) > Vector3.Dot(testMinus - c, Forward) ? 1f : -1f;
                 leaves.Add(new Leaf { t = d, closed = q0, sign = sign });
                 // A collider on each door so closed doors block shots and the player.
-                var col = d.gameObject.GetComponent<BoxCollider>();
+                var col = d.GetComponentInChildren<Collider>();
                 if (col == null)
                 {
                     Bounds b = PartBounds(d);
-                    col = d.gameObject.AddComponent<BoxCollider>();
-                    col.center = d.InverseTransformPoint(b.center);
+                    var box = d.gameObject.AddComponent<BoxCollider>();
+                    box.center = d.InverseTransformPoint(b.center);
                     Vector3 s = d.InverseTransformVector(b.size);
-                    col.size = new Vector3(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Max(Mathf.Abs(s.z), 0.01f));
+                    box.size = new Vector3(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Max(Mathf.Abs(s.z), 0.01f));
                 }
             }
             float depth = Mathf.Abs(Vector3.Dot(body.size, Forward));
             Inside = new Vector3(body.center.x, body.min.y + body.size.y * 0.12f, body.center.z) - Forward * depth * 0.05f;
             FrontPoint = new Vector3(body.center.x, body.min.y, body.center.z) + Forward * (depth * 0.5f + 1.1f);
+            // Wall-hung cabinets: the spot in front is on the floor below.
+            if (Physics.Raycast(FrontPoint + Vector3.up * 0.3f, Vector3.down, out var floorHit, 6f, ~0, QueryTriggerInteraction.Ignore))
+                FrontPoint = floorHit.point;
 
             creak = Resources.Load<AudioClip>("Audio/Night/Creak_Door");
             audioSource = gameObject.AddComponent<AudioSource>();

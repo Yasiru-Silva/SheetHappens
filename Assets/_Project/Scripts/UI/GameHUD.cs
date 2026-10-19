@@ -58,6 +58,10 @@ namespace SheetHappens
             // Crosshair
             Shadowed(new Rect(w / 2 - 10, h / 2 - 14, 20, 28), "+", center, Color.white);
 
+            // Capture meter: a ring beside the crosshair that fills while the beam holds a ghost.
+            var vac = gm.Vacuum;
+            if (vac && vac.Target && vac.Sucking) DrawCaptureRing(vac.Target, w / 2 + 95, h / 2 - 10);
+
             // Top-left: clock, wave, hearts
             Shadowed(new Rect(20, 16, 400, 30), $"{gm.ClockText}   Wave {gm.Wave}", mid, Color.white);
             string hearts = new string('♥', gm.Hearts) + new string('♡', Mathf.Max(0, gm.maxHearts - gm.Hearts));
@@ -102,9 +106,32 @@ namespace SheetHappens
 
             if (!gm.Ready) Shadowed(new Rect(0, h * 0.4f, w, 30), "Preparing the house...", center, Color.white);
             if (Cursor.lockState != CursorLockMode.Locked) Shadowed(new Rect(0, h - 36, w, 26), "Click to play   (Esc frees the mouse)", center, new Color(1, 1, 1, 0.8f));
-            Shadowed(new Rect(w - 420, 16, 400, 60), "Arrows/WASD move · Mouse aim · Left-click shoot\nC crouch/hide · E doors & pick up · Right-click throw · Shift run", small, new Color(1, 1, 1, 0.7f));
+            Shadowed(new Rect(w - 420, 16, 400, 60), "Arrows/WASD move · Mouse aim · Hold left-click to suck\nC crouch/hide · E doors & pick up · Right-click throw · Shift run", small, new Color(1, 1, 1, 0.7f));
 
             if (showDebug) DrawDebug(gm);
+        }
+
+        void DrawCaptureRing(GhostAgent g, float cx, float cy)
+        {
+            const int dots = 40;
+            const float r = 30f, size = 6f;
+            float p = g.SuckProgress;
+            int lit = Mathf.FloorToInt(p * dots);
+            float pulse = 0.75f + 0.25f * Mathf.Sin(Time.time * 18f);
+            var old = GUI.color;
+            for (int i = 0; i < dots; i++)
+            {
+                float a = -Mathf.PI / 2f + i / (float)dots * Mathf.PI * 2f; // clockwise from the top
+                float x = cx + Mathf.Cos(a) * r, y = cy + Mathf.Sin(a) * r;
+                GUI.color = new Color(0, 0, 0, 0.55f);
+                GUI.DrawTexture(new Rect(x - size / 2 - 1, y - size / 2 - 1, size + 2, size + 2), white);
+                GUI.color = i < lit ? Color.Lerp(new Color(0.45f, 0.8f, 1f), new Color(0.85f, 0.5f, 1f), i / (float)dots) * pulse
+                                    : new Color(0.25f, 0.25f, 0.3f, 0.8f);
+                GUI.DrawTexture(new Rect(x - size / 2, y - size / 2, size, size), white);
+            }
+            GUI.color = old;
+            Shadowed(new Rect(cx - 40, cy - 12, 80, 24), $"{p * 100f:0}%", center, Color.white);
+            Shadowed(new Rect(cx - 160, cy - r - 36, 320, 26), $"Capturing {g.DisplayName}...", center, new Color(0.9f, 0.85f, 1f));
         }
 
         void DrawDebug(GameManager gm)
@@ -116,7 +143,7 @@ namespace SheetHappens
                 if (g == null) continue;
                 Vector3 sp = cam.WorldToScreenPoint(g.Eye + Vector3.up * 0.8f);
                 if (sp.z < 0) continue;
-                Shadowed(new Rect(sp.x - 110, Screen.height - sp.y, 220, 22), $"{g.DisplayName}: {g.StateName} ({g.MaxHits - g.HitsTaken} hp)", center, Color.yellow);
+                Shadowed(new Rect(sp.x - 110, Screen.height - sp.y, 220, 22), $"{g.DisplayName}: {g.StateName} ({g.SuckProgress * 100f:0}%)", center, Color.yellow);
             }
         }
     }
